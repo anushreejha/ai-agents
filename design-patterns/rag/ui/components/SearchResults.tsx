@@ -40,10 +40,14 @@ export default function SearchResults({ results, api, query, onSearch }: SearchR
   const [expandedSnippets, setExpandedSnippets] = useState<{ [key: string]: boolean }>({})
   const [suggestions, setSuggestions] = useState<string[]>([])
 
+  //fix: ensures suggestions appear on load/refresh when the search box already has a value
   useEffect(() => {
     const q = searchParams.get("q") || ""
     setSearchQuery(q)
-  }, [searchParams])
+    if (q.length >= 3) {
+      fetchSuggestions(q)
+    }
+  }, [searchParams]) 
 
   useEffect(() => {
     setPapers(results);
