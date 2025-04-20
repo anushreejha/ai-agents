@@ -1,213 +1,140 @@
-"use client"
+'use client';
 
-import { useState, useEffect, useRef } from "react"
-import { useSearchParams } from "next/navigation"
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  TextField,
+  List,
+  ListItem,
+  ListItemText,
   Typography,
   Button,
-  Box,
-  Container,
   CircularProgress,
-  Alert,
-  TextField,
-  Collapse,
-  List,
-  ListItemButton,
   Paper,
-} from "@mui/material"
-import { Search, ChevronDown, ChevronUp } from "lucide-react"
-import debounce from "lodash/debounce"
-import { type PaperResult, type ApiType } from "@/types/api"
-import { getSuggestions } from "@/lib/api"
+} from '@mui/material';
+import debounce from 'lodash/debounce';
 
-interface SearchResultsProps {
-  results: PaperResult[]
-  api: ApiType
-  query: string
-  onSearch: (results: PaperResult[], api: ApiType, query: string) => void
-}
+type PaperResult = {
+  id: string;
+  title: string;
+  snippet: string | null;
+};
 
-export default function SearchResults({ results, api, query, onSearch }: SearchResultsProps) {
-  const searchParams = useSearchParams()
-  const [papers, setPapers] = useState<PaperResult[]>(results)
-  const [searchQuery, setSearchQuery] = useState<string>(query)
-  const [displayedQuery, setDisplayedQuery] = useState<string>(query)
-  const [expandedSnippets, setExpandedSnippets] = useState<{ [key: number]: boolean }>({})
-  const [suggestions, setSuggestions] = useState<string[]>([])
-  const [isFocused, setIsFocused] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+const SearchResults = () => {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<PaperResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [isFocused, setIsFocused] = useState(false);
+  const [expandedPaperId, setExpandedPaperId] = useState<string | null>(null);
 
-  const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    const q = searchParams.get("q") || ""
-    setSearchQuery(q)
-  }, [searchParams])
-
-  useEffect(() => {
-    setPapers(results)
-  }, [results])
-
-  const fetchSuggestions = debounce(async (value: string) => {
-    if (value.length >= 3) {
+  const fetchSuggestions = useRef(
+    debounce(async (value: string) => {
       try {
-        const { suggestions } = await getSuggestions(value, api)
-        setSuggestions(suggestions)
-        setError(null)
-      } catch {
-        setError("Failed to fetch suggestions.")
-        setSuggestions([])
+        if (value.length >= 3) {
+          const res = await fetch(/api/suggestions?q=${value});
+          const data = await res.json();
+          setSuggestions(data.suggestions);
+        } else {
+          setSuggestions([]);
+        }
+      } catch (err) {
+        setSuggestions([]);
       }
-    } else {
-      setSuggestions([])
-    }
-  }, 300)
+    }, 300)
+  ).current;
 
-  const handleSearch = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    if (!searchQuery.trim()) return
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setQuery(value);
+    fetchSuggestions(value);
+  };
 
-    setLoading(true)
-    setSuggestions([])
+  const handleSearch = async () => {
+    if (!query.trim()) return;
+    setLoading(true);
+    setError('');
+    setSuggestions([]);
 
     try {
-      const dummyResults = papers // keep existing results, replace later
-      onSearch(dummyResults, api, searchQuery)
-      setDisplayedQuery(searchQuery)
-      setError(null)
-    } catch {
-      setError("Failed to fetch papers.")
+      const res = await fetch(/api/search?q=${query});
+      if (!res.ok) throw new Error('Search failed');
+      const data = await res.json();
+      setResults(data.results);
+    } catch (err) {
+      setError('Failed to fetch search results.');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  const toggleSnippet = (index: number) => {
-    setExpandedSnippets(prev => ({
-      ...prev,
-      [index]: !prev[index]
-    }))
-  }
+  const handleSuggestionClick = (suggestion: string) => {
+    setQuery(suggestion);
+    handleSearch();
+  };
 
-  const isSnippetTruncated = (snippet: string | null | undefined): boolean => {
-    return !!snippet && snippet.length > 300
-  }
+  const toggleExpanded = (paperId: string) => {
+    setExpandedPaperId((prevId) => (prevId === paperId ? null : paperId));
+  };
 
   return (
-    <Box className="min-h-screen flex flex-col bg-white" sx={{ height: 'calc(100vh - 64px)', overflow: 'auto' }}>
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Typography variant="h6" gutterBottom sx={{ fontWeight: 500, color: "#000" }}>
-          Search Results for "{displayedQuery}"
-        </Typography>
+    <div className="p-4 max-w-3xl mx-auto">
+      <TextField
+        label="Search papers"
+        variant="outlined"
+        fullWidth
+        value={query}
+        onChange={handleInputChange}
+        onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+        onBlur={() => {
+          blurTimeoutRef.current = setTimeout(() => setIsFocused(false), 200);
+        }}
+        onFocus={() => {
+          if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+          setIsFocused(true);
+        }}
+      />
 
-        <Box component="form" onSubmit={handleSearch} sx={{ mb: 4, position: "relative" }}>
-          <TextField
-            fullWidth
-            variant="outlined"
-            placeholder="Search for research papers..."
-            value={searchQuery}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => {
-              blurTimeoutRef.current = setTimeout(() => setIsFocused(false), 150)
-            }}
-            onChange={(e) => {
-              setSearchQuery(e.target.value)
-              fetchSuggestions(e.target.value)
-            }}
-            InputProps={{
-              endAdornment: (
-                <Button type="submit" variant="contained" sx={{ borderRadius: "0 4px 4px 0" }}>
-                  <Search />
-                </Button>
-              ),
-            }}
-          />
+      {suggestions.length > 0 && isFocused && (
+        <Paper elevation={3} className="mt-2">
+          <List>
+            {suggestions.map((s, i) => (
+              <ListItem component="button" key={i} onClick={() => handleSuggestionClick(s)}>
+                <ListItemText primary={s} />
+              </ListItem>
+            ))}
+          </List>
+        </Paper>
+      )}
 
-          {suggestions.length > 0 && isFocused && (
-            <Paper
-              elevation={3}
-              sx={{
-                position: "absolute",
-                top: "100%",
-                left: 0,
-                right: 0,
-                zIndex: 10,
-                mt: 0.5,
-                maxHeight: 300,
-                overflowY: "auto",
-              }}
-              onMouseDown={(e) => e.preventDefault()}
-            >
-              <List disablePadding>
-                {suggestions.map((sugg, idx) => (
-                  <ListItemButton
-                    key={idx}
-                    onClick={() => {
-                      setSearchQuery(sugg)
-                      setSuggestions([])
-                      setTimeout(() => {
-                        handleSearch()
-                      }, 0)
-                    }}
-                    sx={{ py: 1.5, px: 2 }}
-                  >
-                    {sugg}
-                  </ListItemButton>
-                ))}
-              </List>
-            </Paper>
-          )}
-        </Box>
+      {loading && <CircularProgress className="mt-4" />}
 
-        {loading ? (
-          <Box display="flex" justifyContent="center"><CircularProgress /></Box>
-        ) : error ? (
-          <Alert severity="error">{error}</Alert>
-        ) : papers.length > 0 ? (
-          <Box sx={{ border: '1px solid #eee', borderRadius: 2, p: 3 }}>
-            {papers.map((paper, index) => {
-              const isExpanded = expandedSnippets[index]
-              const shouldTruncate = isSnippetTruncated(paper.snippet)
+      {error && <Typography color="error">{error}</Typography>}
 
-              return (
-                <Box key={index} sx={{ mb: 3, pb: 3, borderBottom: index < papers.length - 1 ? '1px solid #eee' : 'none' }}>
-                  <Typography variant="h6" sx={{ fontWeight: 500 }}>
-                    <a href={paper.url} target="_blank" rel="noopener noreferrer" style={{ color: "#1a0dab", textDecoration: "none" }}>
-                      {paper.title}
-                    </a>
-                  </Typography>
+      <List className="mt-4">
+        {results.map((paper) => (
+          <ListItem key={paper.id} className="flex flex-col items-start gap-2">
+            <Typography variant="h6">{paper.title}</Typography>
+            <Typography variant="body2">
+              {expandedPaperId === paper.id
+                ? paper.snippet ?? 'No snippet available'
+                : (paper.snippet ?? 'No snippet available').slice(0, 200) + '...'}
+            </Typography>
+            {paper.snippet && paper.snippet.length > 200 && (
+              <Button
+                size="small"
+                onClick={() => toggleExpanded(paper.id)}
+              >
+                {expandedPaperId === paper.id ? 'Show Less' : 'Show More'}
+              </Button>
+            )}
+          </ListItem>
+        ))}
+      </List>
+    </div>
+  );
+};
 
-                  {paper.snippet ? (
-                    <Box>
-                      <Collapse in={isExpanded} collapsedSize={60}>
-                        <Typography variant="body2" color="text.secondary">
-                          {paper.snippet}
-                        </Typography>
-                      </Collapse>
-                      {shouldTruncate && (
-                        <Button
-                          onClick={() => toggleSnippet(index)}
-                          startIcon={isExpanded ? <ChevronUp /> : <ChevronDown />}
-                          sx={{ mt: 1, color: "#006621", textTransform: 'none' }}
-                        >
-                          {isExpanded ? "Show Less" : "Read More"}
-                        </Button>
-                      )}
-                    </Box>
-                  ) : (
-                    <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                      No abstract available
-                    </Typography>
-                  )}
-                </Box>
-              )
-            })}
-          </Box>
-        ) : (
-          <Typography>No results found.</Typography>
-        )}
-      </Container>
-    </Box>
-  )
-}
+export default SearchResults;
